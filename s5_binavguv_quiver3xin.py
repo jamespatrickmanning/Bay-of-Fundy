@@ -6,27 +6,17 @@
 Created on Fri Oct 12 15:27:09 2012
 
 @author: vsheremet
+modifications by Xiaojian Liu, Huimin, and JiM for BoF manuscript Fig 4 in late 2018
 """
+# Not sure if we really need all these imports (JiM 9/2018)
 import numpy as np
 from SeaHorseLib import *
 from datetime import *
 from scipy import interpolate
 import sys
 from SeaHorseTide import *
-#from pydap.client import open_url
 import matplotlib.pyplot as plt
-#from SeaHorseLib import *
 from datetime import *
-from scipy import interpolate
-import sys
-#from SeaHorseTide import *
-import numpy as np
-#from pydap.client import open_url
-import matplotlib.pyplot as plt
-
-from datetime import *
-#from scipy import interpolate
-import sys
 from matplotlib.path import Path
 from netCDF4 import Dataset
 import shutil
@@ -34,19 +24,58 @@ import matplotlib.mlab as mlab
 import matplotlib.cm as cm
 import os
 from math import sqrt,radians,sin,cos,atan
-
 from datetime import datetime, timedelta
-import numpy as np
-#from pydap.client import open_url
 import matplotlib.pyplot as plt
-#from SeaHorseLib import *
-#from datetime import *
-#from scipy import interpolate
-#import sys
-#from SeaHorseTide import *
-#import shutil
-import matplotlib.mlab as mlab
-import matplotlib.cm as cm
+
+def nearest_point(lon, lat, lons, lats, length):  #0.3/5==0.06
+    '''Find the nearest point to (lon,lat) from (lons,lats),
+     return the nearest-point (lon,lat)
+     author: Bingwei'''
+    p = Path.circle((lon,lat),radius=length)
+    #numpy.vstack(tup):Stack arrays in sequence vertically
+    points = np.vstack((lons.flatten(),lats.flatten())).T  
+        
+    insidep = []
+    #collect the points included in Path.
+    ii=[]
+    for i in xrange(len(points)):
+        if p.contains_point(points[i]):# .contains_point return 0 or 1
+            insidep.append(points[i]) 
+            ii.append(i)
+    # if insidep is null, there is no point in the path.
+    if not insidep:
+        #print 'lon,lat',lon,lat
+        print 'There is no model-point near the given-point.'
+        raise Exception()
+    #calculate the distance of every points in insidep to (lon,lat)
+    distancelist = []
+    for i in insidep:
+        ss=sqrt((lon-i[0])**2+(lat-i[1])**2)
+        distancelist.append(ss)
+    # find index of the min-distance
+    mindex = np.argmin(distancelist)
+    # location the point
+    return mindex,ii
+def rot2d(x, y, ang):
+    '''rotate vectors by geometric angle'''
+    xr = x*np.cos(ang) - y*np.sin(ang)
+    yr = x*np.sin(ang) + y*np.cos(ang)
+    return xr, yr
+def RataDie(yr,mo,da):
+    """
+
+    RD = RataDie(yr,mo=1,da=1,hr=0,mi=0,se=0)
+    RD = RataDie(yr,mo=1,da=1)
+
+    returns the serial day number in the (proleptic) Gregorian calendar
+    or elapsed time in days since 0001-01-00.
+
+    Vitalii Sheremet, SeaHorse Project, 2008-2013.
+    """ 
+    #
+    #    yr+=(mo-1)//12;mo=(mo-1)%12+1; # this extends mo values beyond the formal range 1-12
+    RD=367*yr-(7*(yr+((mo+9)//12))//4)-(3*(((yr+(mo-9)//7)//100)+1)//4)+(275*mo//9)+da-396;
+    return RD    
 def sh_bindata(x, y, z, xbins, ybins):
     """
     Bin irregularly spaced data on a rectangular grid.
@@ -70,13 +99,14 @@ def sh_bindata(x, y, z, xbins, ybins):
             zb_num[iix-1,iiy-1]=len(z[k])
             
     return xb,yb,zb_mean,zb_median,zb_std,zb_num
-"""
-from netCDF4 import Dataset
 
+# MAIN PROGRAM############
+
+# A variety of coastlines follows with most commented out
+"""
 # read in etopo5 topography/bathymetry.
 url = 'http://ferret.pmel.noaa.gov/thredds/dodsC/data/PMEL/etopo5.nc'
 etopodata = Dataset(url)
-
 topoin = etopodata.variables['ROSE'][:]
 lons = etopodata.variables['ETOPO05_X'][:]
 lats = etopodata.variables['ETOPO05_Y'][:]
@@ -84,21 +114,20 @@ lats = etopodata.variables['ETOPO05_Y'][:]
 topoin,lons = shiftgrid(180.,topoin,lons,start=False)
 """
 
-
-
 """
 BATHY=np.genfromtxt('necscoast_noaa.dat',dtype=None,names=['coast_lon', 'coast_lat'])
 coast_lon=BATHY['coast_lon']
 coast_lat=BATHY['coast_lat']
 """
 
-#BATHY=np.genfromtxt('coastlineNE.dat',names=['coast_lon', 'coast_lat'],dtype=None,comments='>')
-#coast_lon=BATHY['coast_lon']
-#coast_lat=BATHY['coast_lat']
-
+"""
+BATHY=np.genfromtxt('coastlineNE.dat',names=['coast_lon', 'coast_lat'],dtype=None,comments='>')
+coast_lon=BATHY['coast_lon']
+coast_lat=BATHY['coast_lat']
+"""
 
 # www.ngdc.noaa.gov
-# world vector shoreline ascii
+# load world vector shoreline ascii
 FNCL='necscoast_worldvec.dat'
 # lon lat pairs
 # segments separated by nans
@@ -115,9 +144,8 @@ nan nan
 """
 CL=np.genfromtxt(FNCL,names=['lon','lat'])
 
-
-FN='binned_drifter12078.npz'
-#FN='binned_model.npz'
+# load historical binned drifter field
+FN='binned_drifter12078.npz' # Where did this file come from?
 Z=np.load(FN) 
 xb=Z['xb']
 yb=Z['yb']
@@ -131,18 +159,13 @@ vb_std=Z['vb_std']
 vb_num=Z['vb_num']
 Z.close()
 
-#cmap = matplotlib.cm.jet
-#cmap.set_bad('w',1.)
 xxb,yyb = np.meshgrid(xb, yb)
-cc=np.arange(-1.5,1.500001,0.03)
-#cc=np.array([-1., -.75, -.5, -.25, -0.2, -.15, -.1, -0.05, 0., 0.05, .1, .15, .2, .25, .5, .75, 1.])
+cc=np.arange(-1.5,1.500001,0.03)# What is this "cc"?
 fig,axes=plt.subplots(2,2,figsize=(15,10))
-#plt.figure()
 ub = np.ma.array(ub_mean, mask=np.isnan(ub_mean))
 vb = np.ma.array(vb_mean, mask=np.isnan(vb_mean))
 Q=axes[0,0].quiver(xxb,yyb,ub.T,vb.T,scale=5.)
 qk=axes[0,0].quiverkey(Q,0.9,0.6,0.5, r'$0.1m/s$', fontproperties={'weight': 'bold'})
-
 #plt.xlabel('''Mean current derived from historical drifter data (1-20m)''')
 
 #plt.plot(coast_lon,coast_lat,'b.')
@@ -181,7 +204,7 @@ axes[0,0].xaxis.tick_top()
 #plt.show()
 ###################################################################################33
 
-
+#Load FVCOM Model binned vectors
 FN='binned_model12078.npz'
 Z=np.load(FN) 
 xb=Z['xb']
@@ -201,14 +224,11 @@ Z.close()
 xxb,yyb = np.meshgrid(xb, yb)
 cc=np.arange(-1.5,1.500001,0.03)
 #cc=np.array([-1., -.75, -.5, -.25, -0.2, -.15, -.1, -0.05, 0., 0.05, .1, .15, .2, .25, .5, .75, 1.])
-
-
 #fig,axes=plt.subplots(1,1)
 ub = np.ma.array(ub_mean, mask=np.isnan(ub_mean))
 vb = np.ma.array(vb_mean, mask=np.isnan(vb_mean))
 Q=axes[0,1].quiver(xxb,yyb,ub.T,vb.T,scale=5.)
 qk=axes[0,1].quiverkey(Q,0.9,0.6,0.5, r'$0.1m/s$', fontproperties={'weight': 'bold'})
-
 #plt.title('''Mean current derived from FVCOM (1-20m)''')
 
 #plt.plot(coast_lon,coast_lat,'b.')
@@ -222,94 +242,18 @@ axes[0,1].axis([-67.875,-64.75,43.915,45.33])#axis([-71,-64.75,42.5,45.33])
 axes[0,1].set_yticklabels([])
 axes[0,1].xaxis.tick_top() 
 
-def sh_bindata(x, y, z, xbins, ybins):
-    """
-    Bin irregularly spaced data on a rectangular grid.
-
-    """
-    ix=np.digitize(x,xbins)
-    iy=np.digitize(y,ybins)
-    xb=0.5*(xbins[:-1]+xbins[1:]) # bin x centers
-    yb=0.5*(ybins[:-1]+ybins[1:]) # bin y centers
-    zb_mean=np.empty((len(xbins)-1,len(ybins)-1),dtype=z.dtype)
-    zb_median=np.empty((len(xbins)-1,len(ybins)-1),dtype=z.dtype)
-    zb_std=np.empty((len(xbins)-1,len(ybins)-1),dtype=z.dtype)
-    zb_num=np.zeros((len(xbins)-1,len(ybins)-1),dtype=int)    
-    for iix in range(1,len(xbins)):
-        for iiy in range(1,len(ybins)):
-#            k=np.where((ix==iix) and (iy==iiy)) # wrong syntax
-            k,=np.where((ix==iix) & (iy==iiy))
-            zb_mean[iix-1,iiy-1]=np.mean(z[k])
-            zb_median[iix-1,iiy-1]=np.median(z[k])
-            zb_std[iix-1,iiy-1]=np.std(z[k])
-            zb_num[iix-1,iiy-1]=len(z[k])
-            
-    return xb,yb,zb_mean,zb_median,zb_std,zb_num
-def nearest_point(lon, lat, lons, lats, length):  #0.3/5==0.06
-    '''Find the nearest point to (lon,lat) from (lons,lats),
-     return the nearest-point (lon,lat)
-     author: Bingwei'''
-    p = Path.circle((lon,lat),radius=length)
-    #numpy.vstack(tup):Stack arrays in sequence vertically
-    points = np.vstack((lons.flatten(),lats.flatten())).T  
-        
-    insidep = []
-    #collect the points included in Path.
-    ii=[]
-    for i in xrange(len(points)):
-        if p.contains_point(points[i]):# .contains_point return 0 or 1
-            insidep.append(points[i]) 
-            ii.append(i)
-    # if insidep is null, there is no point in the path.
-    if not insidep:
-        #print 'lon,lat',lon,lat
-        print 'There is no model-point near the given-point.'
-        raise Exception()
-    #calculate the distance of every points in insidep to (lon,lat)
-    distancelist = []
-    for i in insidep:
-        ss=sqrt((lon-i[0])**2+(lat-i[1])**2)
-        distancelist.append(ss)
-    # find index of the min-distance
-    mindex = np.argmin(distancelist)
-    # location the point
-    
-        
-    return mindex,ii
-def rot2d(x, y, ang):
-    '''rotate vectors by geometric angle'''
-    xr = x*np.cos(ang) - y*np.sin(ang)
-    yr = x*np.sin(ang) + y*np.cos(ang)
-    return xr, yr
-def RataDie(yr,mo,da):
-    """
-
-RD = RataDie(yr,mo=1,da=1,hr=0,mi=0,se=0)
-RD = RataDie(yr,mo=1,da=1)
-
-returns the serial day number in the (proleptic) Gregorian calendar
-or elapsed time in days since 0001-01-00.
-
-Vitalii Sheremet, SeaHorse Project, 2008-2013.
-"""
-#
-#    yr+=(mo-1)//12;mo=(mo-1)%12+1; # this extends mo values beyond the formal range 1-12
-    RD=367*yr-(7*(yr+((mo+9)//12))//4)-(3*(((yr+(mo-9)//7)//100)+1)//4)+(275*mo//9)+da-396;
-    return RD    
-import os
+# what are the next five line doing?
 FNs=[]
 for filename in os.listdir(r'C:\Users\xiaojian\Desktop\Drift\driftx\Drift\driftfvcom_data51'):
     if filename!='FList.csv':
-        
         FNs.append(filename)
 SOURCEDIR='driftfvcom_data51/'
 #DESTINDIR='driftfvcom_data4/'
 
-#FList = np.genfromtxt(SOURCEDIR+'FList.csv',dtype=None,names=['FNs'],delimiter=',')
-#FNs=list(FList['FNs'])
+# Load ROMS model output and generate binned u&v
 kdr=0
 k=RataDie(1858,11,17)
-url='''current_04hind_hourly.nc'''
+url='''current_04hind_hourly.nc''' # is this JUST April hourly field?
 ds=Dataset(url,'r').variables
 url1='''gom6-grid.nc'''
 ds1=Dataset(url1,'r').variables
@@ -328,9 +272,6 @@ u=[]
 v=[]
 romt=[]
 while kdr in range(len(FNs)):
-#while kdr in range(0,284):
-#while kdr in range(9,10):
-    
     FN=FNs[kdr]
     FN1=SOURCEDIR+FN
     Z=np.load(FN1)
@@ -340,7 +281,7 @@ while kdr in range(len(FNs)):
     vmom=sh_rmtide(vmoh,ends=np.NaN)
     if len(londh)>1:
         for a in np.arange(len(londh)):
-            if abs(umom[a])<10 or abs(vmom[a])<10:
+            if abs(umom[a])<10 or abs(vmom[a])<10: # what is this test?
                 x.append(londh[a])
                 y.append(latdh[a])
                 u.append(umom[a])
@@ -348,15 +289,12 @@ while kdr in range(len(FNs)):
                 romt.append(tdh[a])
     kdr=kdr+1
 np.save('romst',romt)
-
 np.save('romslon',x)
 np.save('romslat',y)
 np.save('romsu',u)
 np.save('romsv',v)
 xb,yb,ub_mean,ub_median,ub_std,ub_num = sh_bindata(np.array(x), np.array(y), np.array(u), xi, yi)
 xb,yb,vb_mean,vb_median,vb_std,vb_num = sh_bindata(np.array(x), np.array(y), np.array(v), xi, yi)
-FN='necscoast_worldvec.dat'
-CL=np.genfromtxt(FN,names=['lon','lat'])
 xxb,yyb = np.meshgrid(xb, yb)
 
 #plt.figure()
