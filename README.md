@@ -1,7 +1,7 @@
 # Bay-of-Fundy
 These are notes on the BoF manuscript to be editted by JiM, Huimin, and Xiaojian via "pull request".
 These notes are organized according to Figures.
-
+123
      Fig 3
         needs better documentation within the code
         needs better README file
